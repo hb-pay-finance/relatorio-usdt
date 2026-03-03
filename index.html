@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HB - PAY | Gestão de Câmbio</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root { --primary: #8a2be2; --bg: #0d0d0f; --sidebar: #16161a; --card: rgba(30, 30, 36, 0.9); --text: #f0f0f0; --usdt: #26a17b; --brl: #ffca3a; }
+        
+        /* LOGIN */
+        #lock-screen { position: fixed; top:0; left:0; width:100%; height:100%; background:var(--bg); display:flex; justify-content:center; align-items:center; z-index:9999; }
+        .login-box { background:var(--sidebar); padding:40px; border-radius:20px; border:1px solid var(--primary); text-align:center; }
+        
+        /* SISTEMA */
+        #system-content { display:none; width:100%; height:100vh; margin:0; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; display: flex; }
+        
+        .sidebar { width: 260px; background: var(--sidebar); display: flex; flex-direction: column; padding: 15px; border-right: 1px solid #333; height: 100vh; box-sizing: border-box; }
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 40px; }
+        
+        .new-chat-btn { background: var(--primary); border: none; color: white; padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 20px; font-weight: bold; width: 100%; }
+        .report-header { background: var(--card); padding: 25px; border-radius: 15px; margin-bottom: 20px; border-left: 5px solid var(--primary); display: flex; justify-content: space-between; align-items: center; }
+        .grid-inputs { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 15px; background: var(--card); padding: 20px; border-radius: 15px; margin-bottom: 20px; align-items: end; }
+        
+        input, textarea { background: #2a2a32; border: 1px solid #444; padding: 12px; border-radius: 8px; color: white; width: 100%; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; margin-top: 10px; }
+        th { text-align: left; padding: 12px; color: #777; font-size: 0.8rem; border-bottom: 1px solid #333; }
+        td { padding: 12px; border-bottom: 1px solid #222; }
+        
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 20px; }
+        .stat-card { background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid #333; }
+        .client-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; background: #222; font-size: 0.9rem; }
+        .client-item.active { background: var(--primary); font-weight: bold; }
+        .no-print { display: block; }
+    </style>
+</head>
+<body>
+
+<div id="lock-screen">
+    <div class="login-box">
+        <h1 style="color:var(--primary)">HB - PAY</h1>
+        <input type="password" id="pass-input" placeholder="Chave de Acesso" style="margin-bottom:15px; text-align:center;">
+        <button class="new-chat-btn" onclick="checkPass()">Entrar</button>
+    </div>
+</div>
+
+<div id="system-content">
+    <div class="sidebar">
+        <h2 style="color:var(--primary); text-align:center;">HB - PAY</h2>
+        <button class="new-chat-btn" onclick="novoCliente()">+ Novo Relatório</button>
+        <div id="listaClientes"></div>
+    </div>
+
+    <div class="main-content" id="printable-area">
+        <header class="report-header">
+            <div>
+                <h2 id="display-client-name" style="margin:0;">Selecione um Cliente</h2>
+                <span id="display-date" style="font-size:0.8rem; color:#888;"></span>
+            </div>
+            <input type="date" id="data_fechamento" style="width:auto;">
+        </header>
+
+        <div class="grid-inputs no-print">
+            <div><label style="font-size:10px; color:#888;">USDT</label><input type="number" id="in_usdt" placeholder="0.00" oninput="calcTotal()"></div>
+            <div><label style="font-size:10px; color:#888;">COTAÇÃO</label><input type="number" id="in_rate" step="0.0001" placeholder="0.0000" oninput="calcTotal()"></div>
+            <div><label style="font-size:10px; color:#888;">TOTAL BRL</label><input type="text" id="in_brl" readonly style="background:#1a1a1a;"></div>
+            <button class="new-chat-btn" style="margin:0; height:45px;" onclick="addRegistro()">Add</button>
+        </div>
+
+        <table>
+            <thead><tr><th>VOLUME USDT</th><th>COTAÇÃO</th><th>SUBTOTAL BRL</th><th class="no-print">AÇÃO</th></tr></thead>
+            <tbody id="tabela-corpo"></tbody>
+        </table>
+
+        <div class="stats">
+            <div class="stat-card"><small>TOTAL USDT</small><div id="total-usdt" style="font-size:1.2rem; color:var(--usdt);">₮ 0,00</div></div>
+            <div class="stat-card"><small>PREÇO MÉDIO</small><div id="media-cotacao" style="font-size:1.2rem; color:var(--brl);">R$ 0,00000</div></div>
+            <div class="stat-card"><small>TOTAL GERAL BRL</small><div id="total-brl-geral" style="font-size:1.2rem;">R$ 0,00</div></div>
+        </div>
+
+        <div class="stat-card" style="margin-top:20px;">
+            <small>OBSERVAÇÕES / CRÉDITOS</small>
+            <textarea id="obs-field" rows="3" style="margin-top:10px;" oninput="salvarObs()"></textarea>
+        </div>
+
+        <button class="new-chat-btn" style="background:#fff; color:#000; margin-top:20px;" onclick="gerarPDF()">Baixar PDF</button>
+    </div>
+</div>
+
+<script>
+    const SENHA = "hbpay2026";
+    let clientes = JSON.parse(localStorage.getItem('hb_pay_db')) || {};
+    let clienteAtual = null;
+
+    function checkPass() {
+        if(document.getElementById('pass-input').value === SENHA) {
+            document.getElementById('lock-screen').style.display = 'none';
+            document.getElementById('system-content').style.display = 'flex';
+            renderSidebar();
+        } else { alert("Senha incorreta!"); }
+    }
+
+    function calcTotal() {
+        const u = parseFloat(document.getElementById('in_usdt').value) || 0;
+        const r = parseFloat(document.getElementById('in_rate').value) || 0;
+        document.getElementById('in_brl').value = (u * r).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function novoCliente() {
+        const nome = prompt("Nome do Cliente:");
+        if (!nome) return;
+        const id = "c_" + Date.now();
+        clientes[id] = { nome: nome, data: new Date().toISOString().split('T')[0], registros: [], obs: "" };
+        salvar();
+        renderSidebar();
+        selecionarCliente(id);
+    }
+
+    function selecionarCliente(id) {
+        clienteAtual = id;
+        const c = clientes[id];
+        document.getElementById('display-client-name').innerText = c.nome;
+        document.getElementById('data_fechamento').value = c.data;
+        document.getElementById('obs-field').value = c.obs || "";
+        renderTabela();
+        renderSidebar();
+    }
+
+    function addRegistro() {
+        if (!clienteAtual) return alert("Clique em um cliente na barra lateral ou crie um novo!");
+        const u = parseFloat(document.getElementById('in_usdt').value);
+        const r = parseFloat(document.getElementById('in_rate').value);
+        if (u && r) {
+            clientes[clienteAtual].registros.push({ usdt: u, rate: r });
+            salvar();
+            renderTabela();
+            document.getElementById('in_usdt').value = '';
+            document.getElementById('in_rate').value = '';
+            document.getElementById('in_brl').value = '';
+        }
+    }
+
+    function renderTabela() {
+        const corpo = document.getElementById('tabela-corpo');
+        corpo.innerHTML = '';
+        let tUsdt = 0, tRate = 0, tBrl = 0;
+        const regs = clientes[clienteAtual].registros || [];
+
+        regs.forEach((reg, i) => {
+            tUsdt += reg.usdt; tRate += reg.rate; tBrl += (reg.usdt * reg.rate);
+            corpo.innerHTML += `<tr>
+                <td style="color:var(--usdt)">₮ ${reg.usdt.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                <td>R$ ${reg.rate.toFixed(5)}</td>
+                <td style="color:var(--brl)">R$ ${(reg.usdt * reg.rate).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                <td class="no-print"><button onclick="removerReg(${i})" style="color:red; background:none; border:none; cursor:pointer;">✕</button></td>
+            </tr>`;
+        });
+
+        document.getElementById('total-usdt').innerText = `₮ ${tUsdt.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+        document.getElementById('media-cotacao').innerText = `R$ ${(regs.length ? tRate/regs.length : 0).toFixed(5)}`;
+        document.getElementById('total-brl-geral').innerText = `R$ ${tBrl.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+    }
+
+    function renderSidebar() {
+        const lista = document.getElementById('listaClientes');
+        lista.innerHTML = '';
+        for (let id in clientes) {
+            const div = document.createElement('div');
+            div.className = `client-item ${id === clienteAtual ? 'active' : ''}`;
+            div.innerText = clientes[id].nome;
+            div.onclick = () => selecionarCliente(id);
+            lista.appendChild(div);
+        }
+    }
+
+    function removerReg(i) { clientes[clienteAtual].registros.splice(i, 1); salvar(); renderTabela(); }
+    function salvarObs() { if(clienteAtual) { clientes[clienteAtual].obs = document.getElementById('obs-field').value; salvar(); } }
+    function salvar() { localStorage.setItem('hb_pay_db', JSON.stringify(clientes)); }
+    
+    function gerarPDF() {
+        const element = document.getElementById('printable-area');
+        const opt = { margin: 10, filename: `HB-PAY-${clientes[clienteAtual].nome}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+        html2pdf().set(opt).from(element).save();
+    }
+</script>
+</body>
+</html>
