@@ -72,4 +72,153 @@
         </header>
 
         <div class="grid-inputs no-print">
-            <div><label style="font-size:10px; color:#888;">VOLUME USDT</label><input type="number" id="in_usdt" placeholder="0.00" oninput="calcTotal
+            <div><label style="font-size:10px; color:#888;">VOLUME USDT</label><input type="number" id="in_usdt" placeholder="0.00" oninput="calcTotal()"></div>
+            <div><label style="font-size:10px; color:#888;">COTAÇÃO</label><input type="number" id="in_rate" step="0.0001" placeholder="0.0000" oninput="calcTotal()"></div>
+            <div><label style="font-size:10px; color:#888;">TOTAL BRL</label><input type="text" id="in_brl" readonly style="background:#1a1a1a;"></div>
+            <button class="new-chat-btn" style="margin:0; height:45px;" onclick="addRegistro()">Adicionar</button>
+        </div>
+
+        <table>
+            <thead><tr><th>USDT COMPRADO</th><th>COTAÇÃO</th><th>SUBTOTAL BRL</th><th class="no-print">AÇÃO</th></tr></thead>
+            <tbody id="tabela-corpo"></tbody>
+        </table>
+
+        <div class="stats">
+            <div class="stat-card"><small>TOTAL USDT</small><div id="total-usdt" class="usdt-txt">₮ 0,00</div></div>
+            <div class="stat-card"><small>PREÇO MÉDIO</small><div id="media-cotacao" class="brl-txt">R$ 0,00000</div></div>
+            <div class="stat-card"><small>BRUTO BRL</small><div id="total-brl-geral" style="font-size:1.1rem;">R$ 0,00</div></div>
+            <div class="stat-card" style="border-color:var(--usdt)"><small>SALDO RESTANTE</small><div id="saldo-final" style="font-size:1.1rem; color:var(--usdt);">R$ 0,00</div></div>
+        </div>
+
+        <div class="payment-section">
+            <h3 style="margin-top:0; font-size:1rem; color:var(--primary);">Pagamentos Enviados (Débitos)</h3>
+            <div class="grid-inputs no-print" style="background:transparent; padding:0; margin-bottom:10px;">
+                <input type="number" id="pay_val" placeholder="Valor Pago R$">
+                <input type="text" id="pay_ref" placeholder="Referência/Comprovante">
+                <button class="new-chat-btn" style="margin:0; height:43px;" onclick="addPagamento()">Registrar Débito</button>
+            </div>
+            <div id="lista-pagos" style="font-size:0.85rem; border-top:1px solid #333; padding-top:10px;"></div>
+        </div>
+
+        <div class="stat-card" style="margin-top:20px;">
+            <small>OBSERVAÇÕES / CRÉDITOS EXTRAS</small>
+            <textarea id="obs-field" rows="2" style="margin-top:10px;" oninput="salvarObs()"></textarea>
+        </div>
+
+        <button class="new-chat-btn no-print" style="background:#fff; color:#000; margin-top:20px;" onclick="gerarPDF()">Gerar Relatório em PDF</button>
+    </div>
+</div>
+
+<script>
+    const SENHA = "Lima007";
+    let db = JSON.parse(localStorage.getItem('hb_pay_final_db')) || {};
+    let atual = null;
+
+    function checkPass() {
+        if(document.getElementById('pass-input').value === SENHA) {
+            document.getElementById('lock-screen').style.display = 'none';
+            document.getElementById('system-content').style.display = 'flex';
+            renderSidebar();
+        } else { alert("Chave Incorreta!"); }
+    }
+
+    function calcTotal() {
+        const u = parseFloat(document.getElementById('in_usdt').value) || 0;
+        const r = parseFloat(document.getElementById('in_rate').value) || 0;
+        document.getElementById('in_brl').value = (u * r).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function novoCliente() {
+        const nome = prompt("Nome do Fornecedor/Cliente:");
+        if (!nome) return;
+        const id = "h_" + Date.now();
+        db[id] = { nome: nome, data: new Date().toISOString().split('T')[0], registros: [], pagos: [], obs: "" };
+        salvar(); renderSidebar(); selecionarCliente(id);
+    }
+
+    function selecionarCliente(id) {
+        atual = id;
+        const c = db[id];
+        document.getElementById('display-client-name').innerText = c.nome;
+        document.getElementById('data_fechamento').value = c.data;
+        document.getElementById('obs-field').value = c.obs || "";
+        renderTabela(); renderSidebar();
+    }
+
+    function addRegistro() {
+        if (!atual) return alert("Selecione um cliente!");
+        const u = parseFloat(document.getElementById('in_usdt').value);
+        const r = parseFloat(document.getElementById('in_rate').value);
+        if (u && r) {
+            db[atual].registros.push({ usdt: u, rate: r });
+            salvar(); renderTabela();
+            document.getElementById('in_usdt').value = ''; document.getElementById('in_rate').value = ''; document.getElementById('in_brl').value = '';
+        }
+    }
+
+    function addPagamento() {
+        if (!atual) return alert("Selecione um cliente!");
+        const v = parseFloat(document.getElementById('pay_val').value);
+        const ref = document.getElementById('pay_ref').value || "S/ Ref";
+        if (v) {
+            db[atual].pagos.push({ valor: v, ref: ref });
+            salvar(); renderTabela();
+            document.getElementById('pay_val').value = ''; document.getElementById('pay_ref').value = '';
+        }
+    }
+
+    function renderTabela() {
+        const corpo = document.getElementById('tabela-corpo');
+        const listaPagos = document.getElementById('lista-pagos');
+        corpo.innerHTML = ''; listaPagos.innerHTML = '';
+        
+        let tUsdt = 0, tRate = 0, tBrlBruto = 0, tPago = 0;
+        const c = db[atual];
+
+        c.registros.forEach((reg, i) => {
+            tUsdt += reg.usdt; tRate += reg.rate; tBrlBruto += (reg.usdt * reg.rate);
+            corpo.innerHTML += `<tr>
+                <td class="usdt-txt">₮ ${reg.usdt.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                <td>R$ ${reg.rate.toFixed(5)}</td>
+                <td class="brl-txt">R$ ${(reg.usdt * reg.rate).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                <td class="no-print"><button onclick="removerReg(${i})" style="color:red; background:none; border:none; cursor:pointer;">✕</button></td>
+            </tr>`;
+        });
+
+        c.pagos.forEach((p, i) => {
+            tPago += p.valor;
+            listaPagos.innerHTML += `<div style="margin-bottom:5px;">✅ Pago: R$ ${p.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})} | Ref: ${p.ref} <span class="no-print" onclick="removerPago(${i})" style="color:red; cursor:pointer; margin-left:10px;">[remover]</span></div>`;
+        });
+
+        document.getElementById('total-usdt').innerText = `₮ ${tUsdt.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+        document.getElementById('media-cotacao').innerText = `R$ ${(c.registros.length ? tRate/c.registros.length : 0).toFixed(5)}`;
+        document.getElementById('total-brl-geral').innerText = `R$ ${tBrlBruto.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+        document.getElementById('saldo-final').innerText = `R$ ${(tBrlBruto - tPago).toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+    }
+
+    function removerReg(i) { db[atual].registros.splice(i, 1); salvar(); renderTabela(); }
+    function removerPago(i) { db[atual].pagos.splice(i, 1); salvar(); renderTabela(); }
+    function salvarObs() { if(atual) { db[atual].obs = document.getElementById('obs-field').value; salvar(); } }
+    function salvar() { localStorage.setItem('hb_pay_final_db', JSON.stringify(db)); }
+
+    function renderSidebar() {
+        const lista = document.getElementById('listaClientes');
+        lista.innerHTML = '';
+        for (let id in db) {
+            const div = document.createElement('div');
+            div.className = `client-item ${id === atual ? 'active' : ''}`;
+            div.innerText = db[id].nome;
+            div.onclick = () => selecionarCliente(id);
+            lista.appendChild(div);
+        }
+    }
+
+    function gerarPDF() {
+        if(!atual) return alert("Selecione um cliente!");
+        const element = document.getElementById('printable-area');
+        const opt = { margin: 10, filename: `HB-PAY-${db[atual].nome}.pdf`, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+        html2pdf().set(opt).from(element).save();
+    }
+</script>
+</body>
+</html>
